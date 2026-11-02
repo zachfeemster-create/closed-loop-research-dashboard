@@ -1,0 +1,34 @@
+name: Sync Closed Loop run summaries
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: closed-loop-run-log-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test redaction rules
+        run: python -m unittest discover -s scripts -p 'test_sync.py'
+      - name: Sync safe run metadata from private repo
+        env:
+          CLOSED_LOOP_LOG_TOKEN: ${{ secrets.CLOSED_LOOP_LOG_TOKEN }}
+        run: python scripts/sync_private_log.py
+      - name: Commit changed summaries
+        run: |
+          git config user.name 'closed-loop-dashboard-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/run_index.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Sync redacted Closed Loop interactive run index'
+          git pull --rebase
+          git push
